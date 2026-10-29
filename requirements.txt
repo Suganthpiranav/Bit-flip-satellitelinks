@@ -1,0 +1,10 @@
+# Bit-Flip Code for Satellite Links: Quantum Error Correction Simulation
+# Dependencies for Python 3.10+ / 3.12+
+
+qiskit>=1.0.0
+qiskit-aer>=0.14.0
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+pylatexenc>=2.10
+scipy>=1.10.0
