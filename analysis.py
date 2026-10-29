@@ -211,49 +211,50 @@ def generate_all_plots(
     p = df["physical_error_p"].values
     
     # =========================================================================
-    # PLOT 1: ERROR RATE COMPARISON
+    # PLOT 1: ERROR RATE COMPARISON (Physical p vs Logical Error)
     # =========================================================================
     fig, ax = plt.subplots(figsize=(9, 6), dpi=300)
     
-    # Baseline: No correction (Unencoded)
+    # Baseline: No correction (Unencoded P = p)
     ax.plot(p, df["unencoded_error_sim"], color='#E53E3E', linestyle='--',
-            marker='s', markersize=5, label='Unencoded Link (Simulated No-QEC)', alpha=0.9, lw=2)
+            marker='s', markersize=4, label='Unencoded Link (No-QEC Baseline, $P = p$)', alpha=0.9, lw=1.8)
     
-    # Theoretical 3-Qubit Repetition Code
-    p_fine = np.linspace(0.0, 0.20, 200)
+    # Theoretical 3-Qubit Repetition Code: P_L = 3p^2 - 2p^3
+    p_fine = np.linspace(p.min(), p.max(), 200)
     y_fine_th = theoretical_logical_error(p_fine)
     ax.plot(p_fine, y_fine_th, color='#2B6CB0', linestyle='-',
-            lw=2.5, label=r'Theoretical QEC: $P_{log} = 3p^2(1-p) + p^3$')
+            lw=2.5, label=r'Theoretical Curve: $P_L = 3p^2 - 2p^3$')
     
-    # Simulated 3-Qubit Repetition Code
+    # Simulated 3-Qubit Repetition Code (Monte Carlo)
     ax.plot(p, df["encoded_error_sim"], color='#319795', linestyle='none',
-            marker='o', markersize=6, label='Simulated 3-Qubit QEC (Monte Carlo)', zorder=5)
+            marker='o', markersize=6, label='Monte Carlo Simulated Logical Error (Qiskit Aer)', zorder=5)
     
     # Theoretical Error Bounds (95% Confidence / 2-sigma band)
     shots = sample_experiment.get("shots", 10000)
     se = np.sqrt(y_fine_th * (1.0 - y_fine_th) / shots)
     ax.fill_between(p_fine, np.maximum(0, y_fine_th - 2 * se), y_fine_th + 2 * se,
-                    color='#63B3ED', alpha=0.25, label=r'Monte Carlo $95\%$ Confidence Interval')
+                    color='#63B3ED', alpha=0.25, label=r'Monte Carlo $95\%$ Confidence Interval ($\pm 1.96\sigma$)')
     
-    # Annotate critical satellite link benchmark
-    idx_p10 = np.abs(p - 0.10).argmin()
+    # Annotate mid-range benchmark (e.g. p = 0.15 or 0.20)
+    target_annotate = 0.15 if 0.15 in p else p[len(p)//2]
+    idx_ann = np.abs(p - target_annotate).argmin()
     ax.annotate(
-        f"At p = 0.10:\n• Unencoded Err: {df['unencoded_error_sim'].iloc[idx_p10]:.3f}\n• QEC Err: {df['encoded_error_sim'].iloc[idx_p10]:.3f}\n• Reduction: {df['error_reduction_percent_sim'].iloc[idx_p10]:.1f}%",
-        xy=(p[idx_p10], df["encoded_error_sim"].iloc[idx_p10]),
-        xytext=(0.04, 0.13),
+        f"At p = {p[idx_ann]:.2f}:\n• Unencoded Err: {df['unencoded_error_sim'].iloc[idx_ann]:.4f}\n• Simulated $P_L$: {df['encoded_error_sim'].iloc[idx_ann]:.4f}\n• Theory $P_L$: {df['encoded_error_theoretical'].iloc[idx_ann]:.4f}\n• Error Reduction: {df['error_reduction_percent_sim'].iloc[idx_ann]:.1f}%",
+        xy=(p[idx_ann], df["encoded_error_sim"].iloc[idx_ann]),
+        xytext=(p.min() + (p.max() - p.min()) * 0.10, df["unencoded_error_sim"].max() * 0.70),
         arrowprops=dict(facecolor='#1A365D', arrowstyle='->', lw=1.5),
         bbox=dict(boxstyle="round,pad=0.5", facecolor="#EBF8FF", edgecolor="#3182CE", lw=1.2),
-        fontsize=10, fontweight='medium'
+        fontsize=9.5, fontweight='medium'
     )
     
     ax.set_title("Physical vs. Logical Error Probability in Satellite Quantum Link",
                  fontsize=14, fontweight='bold', pad=14, color='#1A365D')
     ax.set_xlabel("Physical Channel Bit-Flip Error Probability ($p$)", fontsize=12, labelpad=10)
-    ax.set_ylabel("Logical Error Probability ($P_{error}$)", fontsize=12, labelpad=10)
-    ax.set_xlim(-0.005, 0.205)
-    ax.set_ylim(-0.005, 0.22)
+    ax.set_ylabel("Logical Error Probability ($P_L$)", fontsize=12, labelpad=10)
+    ax.set_xlim(p.min() - 0.01, p.max() + 0.01)
+    ax.set_ylim(-0.005, max(df["unencoded_error_sim"].max(), df["encoded_error_sim"].max()) * 1.08)
     ax.grid(True)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(loc='upper left', fontsize=9.5)
     
     plt.tight_layout()
     p1_path = os.path.join(output_dir, "01_error_rate_comparison.png")
@@ -268,12 +269,12 @@ def generate_all_plots(
     
     # Unencoded Success Rate
     ax.plot(p, df["unencoded_success_sim"] * 100, color='#E53E3E', linestyle='--',
-            marker='^', markersize=5, label='Unencoded Transmission ($1 - p$)', lw=2)
+            marker='^', markersize=4, label='Unencoded Transmission ($1 - p$)', lw=1.8)
     
     # Theoretical Encoded Success Rate
     y_fine_succ = (1.0 - y_fine_th) * 100
     ax.plot(p_fine, y_fine_succ, color='#2F855A', linestyle='-',
-            lw=2.5, label=r'Theoretical QEC Success ($1 - P_{log}$)')
+            lw=2.5, label=r'Theoretical QEC Success ($1 - P_L$)')
     
     # Simulated Encoded Success Rate
     ax.plot(p, df["encoded_success_sim"] * 100, color='#276749', linestyle='none',
@@ -283,18 +284,13 @@ def generate_all_plots(
     ax.fill_between(p, df["unencoded_success_sim"] * 100, df["encoded_success_sim"] * 100,
                     color='#C6F6D5', alpha=0.45, label='Fidelity Enhancement Gain')
     
-    # Annotate typical satellite operating zone (p ~ 0.01 - 0.05)
-    ax.axvspan(0.01, 0.05, color='#EDF2F7', alpha=0.6, linestyle=':')
-    ax.text(0.03, 85, "Typical Satellite\nOptical Link Regime\n(p: 1% to 5%)",
-            ha='center', va='center', fontsize=9, style='italic', color='#4A5568',
-            bbox=dict(boxstyle="round,pad=0.4", facecolor="#FFFFFF", edgecolor="#CBD5E0"))
-    
+    min_succ = min(df["unencoded_success_sim"].min(), df["encoded_success_sim"].min()) * 100
     ax.set_title("Transmission Success Rate vs. Channel Error Probability",
                  fontsize=14, fontweight='bold', pad=14, color='#1A365D')
     ax.set_xlabel("Physical Channel Bit-Flip Error Probability ($p$)", fontsize=12, labelpad=10)
     ax.set_ylabel("Transmission Success Rate (%)", fontsize=12, labelpad=10)
-    ax.set_xlim(-0.005, 0.205)
-    ax.set_ylim(75, 101)
+    ax.set_xlim(p.min() - 0.01, p.max() + 0.01)
+    ax.set_ylim(max(0, min_succ - 4), 102)
     ax.grid(True)
     ax.legend(loc='lower left', fontsize=10)
     
@@ -319,25 +315,26 @@ def generate_all_plots(
             marker='D', markersize=6, label='Simulated Reduction (Monte Carlo)', zorder=5)
     
     # Horizontal reference lines
-    ax.axhline(100, color='#A0AEC0', linestyle=':', lw=1)
     ax.axhline(50, color='#CBD5E0', linestyle='--', lw=1, label='50% Error Reduction Threshold')
     
-    # Key callout points
-    callouts = [0.01, 0.05, 0.10, 0.20]
+    # Key callout points within the swept range
+    candidate_callouts = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+    callouts = [cp for cp in candidate_callouts if (cp >= p.min() - 1e-4 and cp <= p.max() + 1e-4)]
     for cp in callouts:
         c_idx = np.abs(p - cp).argmin()
         c_red = df["error_reduction_percent_sim"].iloc[c_idx]
-        ax.scatter([cp], [c_red], color='#D69E2E', s=60, zorder=6)
-        ax.annotate(f"p={cp:.2f}\n{c_red:.1f}%", xy=(cp, c_red),
-                    xytext=(cp, c_red + 4),
+        ax.scatter([p[c_idx]], [c_red], color='#D69E2E', s=55, zorder=6)
+        ax.annotate(f"p={p[c_idx]:.2f}\n{c_red:.1f}%", xy=(p[c_idx], c_red),
+                    xytext=(p[c_idx], c_red + 4),
                     ha='center', fontsize=8.5, fontweight='bold', color='#2D3748')
                     
+    min_red = df["error_reduction_percent_sim"].min()
     ax.set_title("Quantum Error Correction Efficacy: Error Reduction (%)",
                  fontsize=14, fontweight='bold', pad=14, color='#1A365D')
     ax.set_xlabel("Physical Channel Bit-Flip Error Probability ($p$)", fontsize=12, labelpad=10)
     ax.set_ylabel("Error Reduction Achieved (%)", fontsize=12, labelpad=10)
-    ax.set_xlim(-0.005, 0.205)
-    ax.set_ylim(40, 105)
+    ax.set_xlim(p.min() - 0.01, p.max() + 0.01)
+    ax.set_ylim(max(0, min_red - 8), 105)
     ax.grid(True)
     ax.legend(loc='lower left', fontsize=10)
     
