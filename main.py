@@ -1,22 +1,9 @@
 """
-================================================================================
-main.py
-================================================================================
-Project: Bit-Flip Code for Satellite Links: Quantum Error Correction Simulation
-Author: B.Tech Computer Science Student Project
-Framework: Qiskit 2.x, Qiskit Aer, NumPy, Pandas, Matplotlib
+Main Execution Script: 3-Qubit Quantum Error Correction Simulation for Satellite Links
+Framework: Qiskit 2.x & Qiskit Aer
 
-Description:
-This is the primary execution script. It orchestrates the entire simulation:
-1. Validates quantum circuits with deterministic single-qubit error demonstrations.
-2. Explains the purpose of each quantum gate.
-3. Saves the quantum circuit diagram as an image.
-4. Executes Monte Carlo simulations across error probabilities p in [0.00, 0.20]
-   at 10,000+ shots per trial using realistic Aer noise modeling.
-5. Saves the experimental results into 'results/bitflip_results.csv'.
-6. Renders and saves 4 comprehensive scientific plots into 'plots/'.
-7. Displays a formatted comparison table and academic presentation guide.
-================================================================================
+Orchestrates deterministic case validation, Monte Carlo noise simulation across
+error probabilities p in [0.05, 0.30], CSV export, and publication-grade plot generation.
 """
 
 import sys
@@ -37,7 +24,6 @@ import pandas as pd
 from qiskit import transpile
 from qiskit_aer import AerSimulator
 
-# Import local modules
 from quantum_circuit import (
     create_unencoded_circuit,
     create_bitflip_code_circuit,
@@ -62,83 +48,52 @@ def run_single_probability_simulation(
     seed: int
 ) -> Dict[str, Any]:
     """
-    Simulates both unencoded and encoded quantum transmission for a given p.
-    
-    Parameters:
-        p (float): Physical bit-flip probability.
-        shots (int): Number of Monte Carlo shots.
-        simulator (AerSimulator): Qiskit Aer backend instance.
-        seed (int): Simulation seed for reproducibility.
-        
-    Returns:
-        Dict[str, Any]: Raw outcome counts and processed metrics.
+    Executes unencoded baseline and 3-qubit QEC circuits under bit-flip noise rate p.
+    Returns measurement counts, logical error rates, and theoretical comparisons.
     """
     noise_model = build_bitflip_noise_model(p)
-    
-    # -------------------------------------------------------------------------
-    # 1. Unencoded Channel Simulation
-    # -------------------------------------------------------------------------
+
+    # 1. Unencoded baseline transmission: single qubit subject to error rate p
     qc_unenc = create_unencoded_circuit(error_prob=p)
     t_qc_unenc = transpile(qc_unenc, simulator, optimization_level=0)
-    job_unenc = simulator.run(
-        t_qc_unenc,
-        shots=shots,
-        noise_model=noise_model,
-        seed_simulator=seed
-    )
+    job_unenc = simulator.run(t_qc_unenc, shots=shots, noise_model=noise_model, seed_simulator=seed)
     counts_unenc = job_unenc.result().get_counts()
-    
+
     unenc_errors = counts_unenc.get("1", 0)
-    unenc_success = counts_unenc.get("0", 0)
     unenc_error_rate = unenc_errors / shots
-    unenc_success_rate = unenc_success / shots
-    
-    # -------------------------------------------------------------------------
-    # 2. 3-Qubit Repetition Code QEC Simulation
-    # -------------------------------------------------------------------------
+    unenc_success_rate = 1.0 - unenc_error_rate
+
+    # 2. 3-qubit repetition code: encoding, noisy channel, syndrome extraction, dynamic correction
     qc_enc = create_bitflip_code_circuit(error_prob=p, include_barriers=False)
     t_qc_enc = transpile(qc_enc, simulator, optimization_level=0)
-    job_enc = simulator.run(
-        t_qc_enc,
-        shots=shots,
-        noise_model=noise_model,
-        seed_simulator=seed + 1000
-    )
+    job_enc = simulator.run(t_qc_enc, shots=shots, noise_model=noise_model, seed_simulator=seed + 1000)
     counts_enc = job_enc.result().get_counts()
-    
-    # Parse classical registers: 'recovered_bit syndrome' (e.g. '0 01')
+
+    # Parse classical readout: 'recovered_bit syndrome' (e.g., '0 01')
     enc_errors = sum(count for outcome, count in counts_enc.items() if outcome.split()[0] == '1')
-    enc_success = sum(count for outcome, count in counts_enc.items() if outcome.split()[0] == '0')
     enc_error_rate = enc_errors / shots
-    enc_success_rate = enc_success / shots
-    
-    # Extract syndrome distribution
+    enc_success_rate = 1.0 - enc_error_rate
+
+    # Tally syndrome detection statistics
     syndrome_distribution = {"00": 0, "01": 0, "11": 0, "10": 0}
     for outcome, count in counts_enc.items():
         parts = outcome.split()
         if len(parts) > 1:
             synd = parts[1]
             syndrome_distribution[synd] = syndrome_distribution.get(synd, 0) + count
-            
-    # Theoretical calculations
+
+    # Analytical benchmarks: P_L = 3p^2 - 2p^3
     theo_err = float(theoretical_logical_error(p))
     theo_succ = float(theoretical_success_rate(p))
     theo_red = float(theoretical_error_reduction(p))
-    
-    # Empirical percentage reduction
-    if unenc_error_rate > 1e-12:
-        sim_red = ((unenc_error_rate - enc_error_rate) / unenc_error_rate) * 100.0
-    else:
-        sim_red = 100.0 if enc_error_rate == 0 else 0.0
-        
+
+    sim_red = ((unenc_error_rate - enc_error_rate) / unenc_error_rate) * 100.0 if unenc_error_rate > 1e-12 else 100.0
     std_error = np.sqrt(theo_err * (1.0 - theo_err) / shots)
-    
+
     return {
         "p": p,
         "unenc_counts": counts_unenc,
         "enc_counts": counts_enc,
-        "synd_dist": syndrome_distribution,
-        "syndrome_dist": syndrome_distribution,
         "syndrome_distribution": syndrome_distribution,
         "unencoded_error_sim": unenc_error_rate,
         "unencoded_success_sim": unenc_success_rate,
@@ -154,7 +109,7 @@ def run_single_probability_simulation(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Bit-Flip Code for Satellite Links: Quantum Error Correction Simulation"
+        description="3-Qubit Bit-Flip Quantum Error Correction Simulation for Satellite Links"
     )
     parser.add_argument("--shots", type=int, default=10000,
                         help="Number of Monte Carlo trials per probability (default: 10,000)")
@@ -172,62 +127,46 @@ def main():
                         help="Directory to store CSV experimental results (default: results)")
     parser.add_argument("--plots-dir", type=str, default="plots",
                         help="Directory to store output graphs (default: plots)")
-    
     args = parser.parse_args()
-    
-    # Establish base directories
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     results_path = os.path.join(base_dir, args.results_dir)
     plots_path = os.path.join(base_dir, args.plots_dir)
     os.makedirs(results_path, exist_ok=True)
     os.makedirs(plots_path, exist_ok=True)
-    
-    print("\n" + "=" * 90)
-    print("  BIT-FLIP CODE FOR SATELLITE LINKS: QUANTUM ERROR CORRECTION SIMULATION")
-    print("  3rd Year B.Tech Computer Science Capstone Project")
-    print("  Framework: Qiskit 2.6+ & Qiskit Aer Simulator")
-    print("=" * 90)
-    
-    # -------------------------------------------------------------------------
-    # STEP 1: QUANTUM CIRCUIT ARCHITECTURE & GATE EXPLANATION
-    # -------------------------------------------------------------------------
-    print("\n[STEP 1] Generating Quantum Gate Explanations & High-Res Circuit Diagram...")
+
+    print("\n" + "=" * 80)
+    print("  Bit-Flip Code for Satellite Links: Quantum Error Correction Simulation")
+    print("  Framework: Qiskit 2.x & Qiskit Aer")
+    print("=" * 80)
+
+    # 1. Gate explanation and high-resolution circuit diagram generation
     print(explain_quantum_gates())
-    circuit_fig_path = save_circuit_diagrams(plots_path)
-    
-    # -------------------------------------------------------------------------
-    # STEP 2: DETERMINISTIC CANONICAL CASE DEMONSTRATIONS
-    # -------------------------------------------------------------------------
-    print("\n[STEP 2] Running Deterministic Validation Cases (No Error, Q0, Q1, Q2, and Double Error)...")
+    save_circuit_diagrams(plots_path)
+
+    # 2. Deterministic validation of single-qubit errors and syndrome diagnosis
+    print("\n[Step 1] Running Deterministic Validation Cases...")
     demos = run_deterministic_demonstrations(seed=args.seed)
-    
-    print("-" * 90)
+    print("-" * 80)
     print(f"{'Experiment Case':<32} | {'Syndrome (s1s0)':<16} | {'Target Corrected':<18} | {'Status'}")
-    print("-" * 90)
+    print("-" * 80)
     for d in demos:
         status_str = "SUCCESS (Bit |0> Restored)" if d["success"] else "FAIL (Uncorrectable >1 error)"
         print(f"{d['case_name']:<32} | {d['raw_syndrome']:<16} | {d['corrected_target']:<18} | {status_str}")
-    print("-" * 90)
-    
+    print("-" * 80)
+
     if args.demo_only:
-        print("\n[INFO] Demo-only flag active. Exiting without Monte Carlo sweep.")
         return
-        
-    # -------------------------------------------------------------------------
-    # STEP 3: FULL MONTE CARLO CHANNEL SIMULATION (p: 0.05 to 0.30)
-    # -------------------------------------------------------------------------
+
+    # 3. Monte Carlo channel simulation across parameter sweep
     p_values = np.round(np.arange(args.p_min, args.p_max + args.p_step / 2.0, args.p_step), 4)
-    total_points = len(p_values)
-    
-    print(f"\n[STEP 3] Running Monte Carlo Simulation across {total_points} probabilities...")
-    print(f"         Parameters: Shots={args.shots:,} | Range=[{args.p_min:.2f}, {args.p_max:.2f}] | Step={args.p_step:.2f} | Seed={args.seed}")
-    
+    print(f"\n[Step 2] Executing Monte Carlo Sweep across {len(p_values)} points (N={args.shots:,} shots/point)...")
+
     simulator = AerSimulator()
     sim_records = []
     sample_data = {}
-    
     start_time = time.time()
-    
+
     for idx, p in enumerate(p_values):
         t0 = time.time()
         res = run_single_probability_simulation(
@@ -237,26 +176,23 @@ def main():
             seed=args.seed + idx * 7
         )
         sim_records.append(res)
-        
-        # Save sample data for p = 0.10 (representative satellite link error)
+
+        # Retain sample distribution at representative error rate p=0.10
         if np.isclose(p, 0.10, atol=1e-3):
             sample_data = {
                 "p": float(p),
                 "shots": args.shots,
                 "unencoded_counts": res["unenc_counts"],
                 "encoded_counts": res["enc_counts"],
-                "syndrome_distribution": res["synd_dist"]
+                "syndrome_distribution": res["syndrome_distribution"]
             }
-            
+
         elapsed = time.time() - t0
-        print(f"  • Progress [{idx+1:2d}/{total_points:2d}] p={p:4.2f} | Unenc Err: {res['unencoded_error_sim']:6.4f} | QEC Err: {res['encoded_error_sim']:6.4f} | Reduc: {res['error_reduction_percent_sim']:5.1f}% ({elapsed:.2f}s)")
-        
-    total_time = time.time() - start_time
-    print(f"\n[INFO] Monte Carlo simulation completed in {total_time:.2f} seconds.")
-    
-    # -------------------------------------------------------------------------
-    # STEP 4: BUILD RESULTS DATAFRAME & EXPORT CSV
-    # -------------------------------------------------------------------------
+        print(f"  • Progress [{idx+1:2d}/{len(p_values):2d}] p={p:4.2f} | Unenc Err: {res['unencoded_error_sim']:6.4f} | QEC Err: {res['encoded_error_sim']:6.4f} | Reduc: {res['error_reduction_percent_sim']:5.1f}% ({elapsed:.2f}s)")
+
+    print(f"\n[INFO] Simulation completed in {time.time() - start_time:.2f} seconds.")
+
+    # 4. Save results to CSV
     df = pd.DataFrame([{
         "physical_error_p": r["p"],
         "unencoded_error_sim": r["unencoded_error_sim"],
@@ -269,69 +205,25 @@ def main():
         "error_reduction_percent_theoretical": r["error_reduction_percent_theoretical"],
         "monte_carlo_std_error": r["monte_carlo_std_error"]
     } for r in sim_records])
-    
+
     csv_file_path = os.path.join(results_path, "bitflip_results.csv")
     df.to_csv(csv_file_path, index=False)
-    print(f"\n[STEP 4] Experimental data successfully written to: {csv_file_path}")
-    
-    # -------------------------------------------------------------------------
-    # STEP 5: GENERATE PUBLICATION-GRADE PLOTS
-    # -------------------------------------------------------------------------
-    print("\n[STEP 5] Generating and saving scientific graphs...")
+    print(f"[Step 3] Experimental data written to: {csv_file_path}")
+
+    # 5. Render publication-grade figures
     if not sample_data:
-        # Fallback if p=0.05 was not specifically in the sweep
         sample_data = {
-            "p": sim_records[len(sim_records)//4]["p"],
+            "p": sim_records[len(sim_records)//2]["p"],
             "shots": args.shots,
-            "unencoded_counts": sim_records[len(sim_records)//4]["unenc_counts"],
-            "encoded_counts": sim_records[len(sim_records)//4]["enc_counts"],
-            "syndrome_distribution": sim_records[len(sim_records)//4]["synd_dist"]
+            "unencoded_counts": sim_records[len(sim_records)//2]["unenc_counts"],
+            "encoded_counts": sim_records[len(sim_records)//2]["enc_counts"],
+            "syndrome_distribution": sim_records[len(sim_records)//2]["syndrome_distribution"]
         }
-    plots_generated = generate_all_plots(df, sample_data, plots_path)
-    for name, path in plots_generated.items():
-        print(f"  • Created plot [{name}]: {path}")
-        
-    # -------------------------------------------------------------------------
-    # STEP 6: DISPLAY SUMMARY TABLE
-    # -------------------------------------------------------------------------
+    generate_all_plots(df, sample_data, plots_path)
+    print(f"[Step 4] Plots successfully saved to: {plots_path}")
+
+    # 6. Display formatted experimental comparison table
     print_summary_table(df)
-    
-    # -------------------------------------------------------------------------
-    # STEP 7: SCIENTIFIC DISCUSSION & FACULTY PRESENTATION GUIDE
-    # -------------------------------------------------------------------------
-    print("=" * 90)
-    print("  SCIENTIFIC ANALYSIS & FACULTY VIVA PRESENTATION GUIDE")
-    print("=" * 90)
-    print("""
-1. Theoretical Validation & Statistical Fluctuation:
-   - Theoretical model: P_L = 3p²(1 - p) + p³ = 3p² - 2p³.
-   - The simulation results closely match the analytical polynomial across all 26 points (p = 0.05 to 0.30).
-   - Minor deviations between simulated and theoretical curves are solely due to
-     standard Monte Carlo sampling variance, bounded by ±1.96 * sqrt(P_L*(1 - P_L)/N_shots).
-     With N = 10,000 shots, empirical values remain well within statistical error bands.
-
-2. Code Efficacy & Break-Even Threshold:
-   - For all p < 0.50, P_L = 3p² - 2p³ < p, providing a strict fidelity enhancement over unencoded links.
-   - At p = 0.05, error reduction is ~85.5% (fidelity: 95.1% unencoded -> 99.2% QEC).
-   - At p = 0.15, error reduction is ~59.5% (fidelity: 85.4% unencoded -> 93.9% QEC).
-   - At p = 0.30, error reduction is ~28.0% (fidelity: 70.0% unencoded -> 78.4% QEC).
-
-3. Idealized Bit-Flip Model vs. Realistic Satellite Optical Link (Crucial Distinction):
-   - Idealized Model (Simulated):
-     • Assumes pure Pauli-X (bit-flip) errors with independent probability p.
-     • Assumes zero photon loss, noiseless ancilla measurements, and instantaneous classical feedforward.
-   - Realistic Satellite Communication Channel:
-     • Arbitrary Quantum Errors: Atmospheric turbulence and optical birefringence induce continuous
-       polarization rotation, producing arbitrary errors (alpha*X + beta*Y + gamma*Z). The 3-qubit code
-       has distance d=1 against Pauli-Z (phase flips) and fails completely under phase noise.
-     • Dominant Photon Loss: Free-space satellite downlinks/uplinks experience 20-40 dB channel loss
-       due to beam divergence and diffraction (erasure channel rather than Pauli noise).
-     • Background Noise: Solar photons and detector dark counts cause timing jitter and false clicks.
-     • Fault-Tolerant QEC: Practical satellite quantum repeaters require full stabilizer codes
-       (e.g., Steane [[7,1,3]], Shor 9-qubit, or Surface codes) with entanglement purification.
-================================================================================
-    """)
-    print("[SUCCESS] Complete simulation run finished. All artifacts are ready for presentation.")
 
 
 if __name__ == "__main__":
